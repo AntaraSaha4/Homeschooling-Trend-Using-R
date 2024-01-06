@@ -1,0 +1,407 @@
+---
+title: 'Final Project Analysis : R Scripts'
+author: "Antara Saha"
+date: "`r Sys.Date()`"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+---
+
+# **INTRODUCTION**:
+
+For my final project, I will be performing analysis to find the relation between Homeschooling with vaccination status, race & education attainment.
+
+For this analysis, I will use the Household Pulse Survey data from Phase 3.4 and Phase 3.5, available here:
+
+* [Phase 3.5 PUF Releases](https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html#phase3.5)
+* [Phase 3.4 PUF Releases](https://www.census.gov/programs-surveys/household-pulse-survey/datasets.html#phase3.4)
+
+
+### **STEP 1: LOAD DATA INTO R**
+
+```{r message=FALSE}
+# Load Data into R
+library(tidyverse)
+library(dplyr)
+library(knitr)
+library(lmtest)
+library(ggpubr)
+library(ggthemes)
+
+inp_fl <- list.files(pattern=".csv")
+
+tmp_dt_5_11 <- data.frame(matrix(ncol = 5, nrow = 0))
+colnames(tmp_dt_5_11) <- c('RRACE','EEDUC','ENRHMSCHK',
+                           'KIDS_5_11Y','KIDDOSESRV_5_11Y')
+
+tmp_dt_12_17 <- data.frame(matrix(ncol = 5, nrow = 0))
+colnames(tmp_dt_12_17) <- c('RRACE','EEDUC','ENRHMSCHK',
+                            'KIDS_12_17Y','KIDDOSESRV_12_17Y')
+
+#Load file in R
+for (i in 1:length(inp_fl)) 
+{
+  inp_dt <- data.frame(read.csv(inp_fl[i], header = TRUE, stringsAsFactors = FALSE,
+                                na.strings = c("-88","-99")))
+  
+  if(i<=3){
+    inp_dt_5_11 <- inp_dt%>%
+      select(RRACE,EEDUC,ENRHMSCHK,KIDS_5_11Y,KIDDOSES_5_11Y)%>%
+      filter(KIDS_5_11Y==1)%>%
+      mutate(HMSCH = ifelse(ENRHMSCHK ==1,1,0))%>%
+      rename(KIDDOSESRV_5_11Y=KIDDOSES_5_11Y)
+    
+    inp_dt_12_17 <- inp_dt%>%
+      select(RRACE,EEDUC,ENRHMSCHK,KIDS_12_17Y,KIDDOSES_12_17Y)%>%
+      filter(KIDS_12_17Y==1)%>%
+      mutate(HMSCH = ifelse(ENRHMSCHK ==1,1,0))%>%
+      rename(KIDDOSESRV_12_17Y=KIDDOSES_12_17Y)
+  }
+  else{
+    inp_dt_5_11 <- inp_dt%>%
+      select(RRACE,EEDUC,ENRHMSCHK,KIDS_5_11Y,KIDDOSESRV_5_11Y)%>%
+      filter(KIDS_5_11Y==1)%>%
+      mutate(HMSCH = ifelse(ENRHMSCHK ==1,1,0))
+    
+    inp_dt_12_17 <- inp_dt%>%
+      select(RRACE,EEDUC,ENRHMSCHK,KIDS_12_17Y,KIDDOSESRV_12_17Y)%>%
+      filter(KIDS_12_17Y==1)%>%
+      mutate(HMSCH = ifelse(ENRHMSCHK ==1,1,0))
+    
+  }
+  
+  tmp_dt_5_11 <- bind_rows(tmp_dt_5_11, inp_dt_5_11)
+  tmp_dt_12_17 <- bind_rows(tmp_dt_12_17, inp_dt_12_17)
+  
+  inp_dt <- data.frame(NULL)
+}
+
+# Remove records where the Vaccination Status for kids is anything other than Yes or No.
+
+fnl_dt_5_11 <-
+  tmp_dt_5_11%>%
+  filter(KIDDOSESRV_5_11Y !=3&!is.na(KIDDOSESRV_5_11Y))
+
+fnl_dt_12_17 <-
+  tmp_dt_12_17%>%
+  filter(KIDDOSESRV_12_17Y !=3&!is.na(KIDDOSESRV_12_17Y))
+
+fnl_dt_5_11$HMSCH[is.na(fnl_dt_5_11$HMSCH)] <- 0
+fnl_dt_12_17$HMSCH[is.na(fnl_dt_12_17$HMSCH)] <- 0
+```
+
+### **STEP 2: CREATE FACTORS**
+
+```{r message=FALSE}
+# Convert Vaccination Status, Race, and Education attainment into factors. 
+
+# RACE
+fnl_dt_5_11$RRACE <- 
+  factor(fnl_dt_5_11$RRACE,labels = c("White", "Black", "Asian","Other"))
+
+fnl_dt_12_17$RRACE <- 
+  factor(fnl_dt_12_17$RRACE,labels = c("White", "Black", "Asian","Other"))
+
+# EDUCATION ATTAINMENT
+fnl_dt_5_11$EEDUC <- ifelse(fnl_dt_5_11$EEDUC <=4 ,"Less Educated","Well Educated")
+fnl_dt_12_17$EEDUC <- ifelse(fnl_dt_12_17$EEDUC <=4 ,"Less Educated","Well Educated")
+
+fnl_dt_5_11$EEDUC <- as.factor(fnl_dt_5_11$EEDUC)
+fnl_dt_12_17$EEDUC <- as.factor(fnl_dt_12_17$EEDUC)
+
+# VACCINATION STATUS
+fnl_dt_5_11$KIDDOSESRV_5_11Y <- 
+  factor(fnl_dt_5_11$KIDDOSESRV_5_11Y,labels = c("Vaccinated","Not_Vaccinated"))
+
+fnl_dt_12_17$KIDDOSESRV_12_17Y <- 
+  factor(fnl_dt_12_17$KIDDOSESRV_12_17Y,labels = c("Vaccinated","Not_Vaccinated"))
+```
+
+Final Data Tables after data cleansing for age groups 5-11 and 12-17 years old.
+
+```{r}
+kable(head(fnl_dt_5_11),caption = "**Table 1: Final Data Table for Age Group 5-11 Years Old**")
+kable(head(fnl_dt_12_17),caption = "**Table 2: Final Data Table for Age Group 12-17 Years Old**")
+```
+
+# **FOR KIDS AGE GROUP 5-11 YEARS OLD**
+### **STEP 3: DESCRIPTIVE STATISTICS**
+
+Proportion of kids Homeschooling based on the demographic factors.
+
+```{r message=FALSE, fig.width=10, fig.height=5}
+# For Kids Age Group : 5_11 Yrs Old
+
+# Plot Percent of Kids Homeschooling Vs Vaccination Status
+plot1 <- fnl_dt_5_11%>%
+  group_by(KIDDOSESRV_5_11Y,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(KIDDOSESRV_5_11Y, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Vaccination Status")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Plot Percent of Kids Homeschooling Vs Race
+plot2 <- fnl_dt_5_11%>%
+  group_by(RRACE,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(RRACE, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Race")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Plot Percent of Kids Homeschooling Vs Education Attainment
+plot3 <- fnl_dt_5_11%>%
+  group_by(EEDUC,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(EEDUC, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Education Attainment")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Combining all plot into one
+combined_plot_5_11 <- ggarrange(plot1, plot2, plot3, nrow = 1, ncol = 3,
+                                common.legend = TRUE,legend="bottom")
+annotate_figure(combined_plot_5_11,
+                top = text_grob("Percent of Kids Homeschool by: Kids Vaccination Status,Race,Education Attainment\nAge Group: 5_11Yrs Old\n",
+                                color = "black", face = "bold", size = 14))+
+  theme_light()
+```
+
+### **STEP 4: DISPROPORTIONALITY INDICES**
+
+Determine the disproportional indices for the % of children who are Homeschooling based on the demographic characteristics 
+
+```{r message=FALSE}
+# Define Function to calculate Disproportionality Indices
+disp <- function(cats,condition,pop) 
+  {
+  dispnum <- condition/sum(condition)
+  dispdenom <- pop/sum(pop)
+  disp <- dispnum/dispdenom
+  return(data.frame(category=cats, share_condition=dispnum, 
+                    share_population=dispdenom, disproportionality=disp))
+}
+```
+******
+```{r message=FALSE}
+
+# Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Vaccination Status
+fnl_dt_5_11_summary <- fnl_dt_5_11%>%
+  group_by(KIDDOSESRV_5_11Y)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_5_11 <- disp(fnl_dt_5_11_summary$KIDDOSESRV_5_11Y,fnl_dt_5_11_summary$hh_kids_homeschool,fnl_dt_5_11_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_5_11$Rank <- rank(-disp_ind_5_11$disproportionality)
+
+kable(disp_ind_5_11[order(disp_ind_5_11$Rank, decreasing = FALSE), ],
+      caption = "**Table 3: Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Vaccination Status**")
+```
+******
+```{r message=FALSE}
+# Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Race
+fnl_dt_5_11_summary <- fnl_dt_5_11%>%
+  group_by(RRACE)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_5_11 <- disp(fnl_dt_5_11_summary$RRACE,fnl_dt_5_11_summary$hh_kids_homeschool,fnl_dt_5_11_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_5_11$Rank <- rank(-disp_ind_5_11$disproportionality)
+
+kable(disp_ind_5_11[order(disp_ind_5_11$Rank, decreasing = FALSE), ],
+      caption = "**Table 4: Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Race**")
+```
+******
+```{r message=FALSE}
+# Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Education Attainment
+fnl_dt_5_11_summary <- fnl_dt_5_11%>%
+  group_by(EEDUC)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_5_11 <- disp(fnl_dt_5_11_summary$EEDUC,fnl_dt_5_11_summary$hh_kids_homeschool,fnl_dt_5_11_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_5_11$Rank <- rank(-disp_ind_5_11$disproportionality)
+
+kable(disp_ind_5_11[order(disp_ind_5_11$Rank, decreasing = FALSE), ],
+      caption = "**Table 5: Disproportionality Indices for kids Homeschooling of age 5-11 yrs old by Education Attainment**")
+```
+
+### **STEP 5: MULTIVARIATE REGRESSION & ODDS RATIO**
+
+Conduct a regression to test the hypothesis that the association of the dependent variable with independent variables is statistically significant. Also,evaluate the odds of being Homeschooling for above stated demographic factors.
+
+**NOTE: ** For the purposes of this analysis, I'll use the reference categories of 
+
+-   "White" for race 
+-   "Well-Educated" for educational attainment
+-   "Vaccinated" for Vaccination Status
+
+```{r}
+mdl_0_5_11 <- glm(HMSCH ~1, data = fnl_dt_5_11)
+mdl_multi_5_11 <- glm(HMSCH ~ KIDDOSESRV_5_11Y+
+                   relevel(RRACE,1)+
+                   relevel(EEDUC,2),
+                 data = fnl_dt_5_11,family = "binomial")
+summary(mdl_multi_5_11)
+exp(coef(mdl_multi_5_11))
+lrtest(mdl_0_5_11,mdl_multi_5_11)
+```
+
+# **FOR KIDS AGE GROUP 12-17 YEARS OLD**
+### **STEP 3: DESCRIPTIVE STATISTICS**
+
+Proportion of kids Homeschooling based on the demographic factors.
+
+```{r message=FALSE,fig.width=10, fig.height=5}
+# For Kids Age Group :12-17 Yrs Old
+# Plot Percent of Kids Homeschooling Vs Vaccination Status
+plot1 <- fnl_dt_12_17%>%
+  group_by(KIDDOSESRV_12_17Y,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(KIDDOSESRV_12_17Y, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Vaccination Status")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Plot Percent of Kids Homeschooling Vs Race
+plot2 <- fnl_dt_12_17%>%
+  group_by(RRACE,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(RRACE, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Race")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Plot Percent of Kids Homeschooling Vs Education Attainment
+plot3 <- fnl_dt_12_17%>%
+  group_by(EEDUC,HMSCH)%>%
+  summarise(count = n())%>%
+  mutate(pct = (count/sum(count))*100)%>%
+  filter(HMSCH == 1)%>%
+  ggplot(aes(EEDUC, pct))+
+  geom_bar(stat = "identity", position = 'dodge', fill="steelblue")+
+  scale_y_continuous(breaks = seq(0,20,5))+
+  labs(y = "% of Kids in Homeschooling", x = "Education Attainment")+
+  geom_text(aes(label = formatC(pct, digits = 1, format = "f")),
+            colour = "white", size = 4, vjust = 1.5)+
+  theme_light()
+
+# Combining all plot into one
+combined_plot_12_17 <- ggarrange(plot1, plot2, plot3, nrow = 1, ncol = 3,
+                                common.legend = TRUE,legend="bottom")
+annotate_figure(combined_plot_12_17,
+                top = text_grob("Percent of Kids Homeschool by: Kids Vaccination Status,Race,Education Attainment\nAge Group: 12_17Yrs Old\n",
+                                color = "black", face = "bold", size = 14))+
+  theme_light()
+```
+
+### **STEP 4: DISPROPORTIONALITY INDICES**
+
+Determine the disproportional indices for the % of children who are homeschooled based on the demographic characteristics 
+
+```{r message=FALSE}
+# Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Vaccination Status
+fnl_dt_12_17_summary <- fnl_dt_12_17%>%
+  group_by(KIDDOSESRV_12_17Y)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_12_17 <- disp(fnl_dt_12_17_summary$KIDDOSESRV_12_17Y,fnl_dt_12_17_summary$hh_kids_homeschool,fnl_dt_12_17_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_12_17$Rank <- rank(-disp_ind_12_17$disproportionality)
+
+kable(disp_ind_12_17[order(disp_ind_12_17$Rank, decreasing = FALSE), ],
+      caption = "**Table 6: Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Vaccination Status**")
+```
+******
+```{r message=FALSE}
+# Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Race
+fnl_dt_12_17_summary <- fnl_dt_12_17%>%
+  group_by(RRACE)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_12_17 <- disp(fnl_dt_12_17_summary$RRACE,fnl_dt_12_17_summary$hh_kids_homeschool,fnl_dt_12_17_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_12_17$Rank <- rank(-disp_ind_12_17$disproportionality)
+
+kable(disp_ind_12_17[order(disp_ind_12_17$Rank, decreasing = FALSE), ],
+      caption = "**Table 7: Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Race**")
+```
+******
+```{r message=FALSE}
+# Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Education Attainment
+fnl_dt_12_17_summary <- fnl_dt_12_17%>%
+  group_by(EEDUC)%>%
+  summarise(hh_kids = n(),
+            hh_kids_homeschool = length(HMSCH[HMSCH == 1]),
+            hh_kids_not_homeschool = length(HMSCH[HMSCH == 0]))
+
+disp_ind_12_17 <- disp(fnl_dt_12_17_summary$EEDUC,fnl_dt_12_17_summary$hh_kids_homeschool,fnl_dt_12_17_summary$hh_kids)
+
+# Rank them from highest to lowest
+disp_ind_12_17$Rank <- rank(-disp_ind_12_17$disproportionality)
+
+kable(disp_ind_12_17[order(disp_ind_12_17$Rank, decreasing = FALSE), ],
+      caption = "**Table 8: Disproportionality Indices for kids Homeschooling of age 12-17 yrs old by Education Attainment**")
+```
+
+### **STEP 5: MULTIVARIATE REGRESSION & ODDS RATIO**
+
+Conduct a regression to test the hypothesis that the association of the dependent variable with independent variables is statistically significant.Also,evaluate the odds of being Homeschooling for above stated demographic factors.
+
+**NOTE: ** For the purposes of this analysis, I'll use the reference categories of 
+
+-   "White" for race 
+-   "Well-Educated" for educational attainment
+-   "Vaccinated" for Vaccination Status
+
+```{r message=FALSE}
+mdl_0_12_17 <- glm(HMSCH ~1, data = fnl_dt_12_17)
+mdl_multi_12_17 <- glm(HMSCH ~ KIDDOSESRV_12_17Y+
+                   relevel(RRACE,1)+
+                   relevel(EEDUC,2),
+                 data = fnl_dt_12_17,family = "binomial")
+summary(mdl_multi_12_17)
+exp(coef(mdl_multi_12_17))
+lrtest(mdl_0_12_17,mdl_multi_12_17)
+```
